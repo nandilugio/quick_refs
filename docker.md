@@ -93,7 +93,7 @@ docker container ls        # Just list running container
 docker container run <image>              # Run an image in a new container
                      --name <name>        # Sets a name instead of random generated from scientists/hackers
                      --publish | -p <80:80>   # Listen in local port and forward to port listening inside container
-                     --detach | -d        # Detaches the console
+                     --detach | -d        # Detaches the console: doen't output logs
                      --env | -e <VAR=val> # Set env vars inside the container
                      -it                  # Allocate TTY, keep STDIN: run container interactively (shell)
                      --rm                 # Removes container after it's done
@@ -166,6 +166,33 @@ Mounts an arbitrary host path on a container's mount point.
 docker run -v <absolute-path-in-host>:<mount-point-in-container>    # Note that it knows it's a path and not a name because it starts with a `/`.
 ```
 
+## Compose
 
+[Docs](https://docs.docker.com/compose/)
 
+It's a separate tool. Automates local deployments.
+
+It basically replaces a shell script with all `image build`s, `container run`s, `volume`s and `network`s.
+
+Consists of a file named `docker-compose.yml` by default, and the cli tool that let's you do:
+
+```sh
+docker-compose up                   # Runs everything in docker-compose.yml: builds/starts containers, creates volumes and networks, etc.
+                  --detach | -d     # Detaches the console: doen't output logs
+docker-compose down                 # Shuts down everything defined in docker-compose.yml
+```
+Example `docker-compose.yml`:
+
+```yml
+version: '3'                # Protocol version
+services:                   # Containers that will be (built and) run
+  web:                      # Name for the container (and DNS)
+    build: .                # This image should be built from a Dockerfile at `.`
+    ports:                  # Expose ports (like `-p`)
+     - "5000:5000"
+    volumes:                # Volumes (like `-v`)
+     - .:/code              
+  redis:                    # Another container
+    image: "redis:alpine"
+```
 
