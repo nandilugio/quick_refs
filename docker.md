@@ -71,8 +71,8 @@ RUN apt update \                                      # Run arbitrary commands
 COPY . /opt/mysoft                                    # Copy files from host. Useful for dev testing: copy project
 WORKDIR /opt/mysoft                                   # Set working directory
 RUN ./install.sh
-RUN ln -sf /dev/stdout /var/log/mysoft/$MYSOFT_VER/mysoft.log \
-    && ln -sf dev/stderr /var/log/mysoft/$MYSOFT_VER/errors.log
+RUN ln -sf /dev/stdout /var/log/mysoft/$MYSOFT_VER/mysoft.log \     # Redirect logs so Docker can handle them
+    && ln -sf dev/stderr /var/log/mysoft/$MYSOFT_VER/errors.log     # see `docker container logs`
 EXPOSE 123 456                                        # Expose ports to virtual network (not host: see `-p`)
 CMD ["mysoft", "--some-params", "..."]                # Run this command on container start (overrideable)
 ```
@@ -90,7 +90,6 @@ They have an extra filesystem layer on top for current disk state. It's commitab
 ```sh
 docker container ls        # Just list running container
                     -a     # All created containers
-
 docker container run <image>              # Run an image in a new container
                      --name <name>        # Sets a name instead of random generated from scientists/hackers
                      --publish | -p <80:80>   # Listen in local port and forward to port listening inside container
@@ -99,21 +98,16 @@ docker container run <image>              # Run an image in a new container
                      -it                  # Allocate TTY, keep STDIN: run container interactively (shell)
                      --rm                 # Removes container after it's done
                      command              # Run command instead of #TODO in Dockerfile
-
 docker container start <container>   # Starts the container
                        -ai           # Interactively (see run -it)
-
 docker container stop <container>    # Stops the container
-
 docker container exec -it <container> command  # Runs command on running container
-
 docker container rm <container>      # Removes a container
-
 docker container inspect <container> # Shows a JSON with container's config
-
 docker container stats <container>   # Shows running stats
-
 docker container top <container>     # Top inside the container
+docker container log <container>     # Show last lines of logs
+                     -f              # Follow logs
 ```
 
 ## Networking
@@ -133,18 +127,12 @@ Using Docker DNS its better than fixed IP given how are those dinamically assign
 
 ```sh
 docker network ls                    # List virtual networks
-
 docker network inspect               # 
-
 docker network create <name>         # Create a new virtual network
                       --driver       # Use a particular driver. Defaults to bridge
-
 docker network [dis]connect <container> <network>   # (Dis)Connects a container to a network: Creates a new interface on it.
-
 docker container inspect --format '{{ .NetworkSettings.IPAddress }}'    # Shows IP address of container
-
 docker container port <container>    # Show ports exposed to host
-
 docker container run <image>              # Run an image in a new container
                      --net <network>      # TODO: attach to docker virtual network
                      --net-alias <name>   # Extra name to use as hostname in Docekr DNS. Repeats are OK (DNS RoundRobin)
@@ -152,10 +140,31 @@ docker container run <image>              # Run an image in a new container
                      --publish | -p <80:80>   # Listen in local port and forward to port listening inside container
 ```
 
+## Persistence
 
+### Volumes
 
-## Doubts!
+Volumes are mounted in containers at specific locations that can be set in the Dockerfile using `VOLUME <mount-point>`, or in the commandline using `docker run -v [<name>:]<mount-point>`, which conveniently allows you to name the volume.
 
+They're created either manually (`docker volume create`) or when a container is run.
+
+When created manually, a driver can be specified. These include:
+  - local: (default) It creates a directory under `/var/lib/docker/volumes/` and shares it to the container.\
+  - TODO: others?
+
+```sh
+docker volume ls
+docker volume inspect <volume>
+docker volume create              # TODO: lets you specify drivers
+```
+
+### Bind Mounting
+
+Mounts an arbitrary host path on a container's mount point.
+
+```sh
+docker run -v <absolute-path-in-host>:<mount-point-in-container>    # Note that it knows it's a path and not a name because it starts with a `/`.
+```
 
 
 
