@@ -99,7 +99,8 @@ docker container run <image>              # Run an image in a new container
                      --rm                 # Removes container after it's done
                      command              # Run command instead of #TODO in Dockerfile
 docker container start <container>   # Starts the container
-                       -ai           # Interactively (see run -it)
+                       -a            # Attach the console STDOUT and STDERR: output logs
+                       -i            # Interactively (usually with -a, see run -it)
 docker container stop <container>    # Stops the container
 docker container exec -it <container> command  # Runs command on running container
 docker container rm <container>      # Removes a container
