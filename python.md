@@ -444,10 +444,208 @@ open()
 
 ### Concurrency
 
-### async and await
+TODO: greenlets and gevent
+TODO: Locks and Thread-safety
+
+#### Preemptive multitasking: Multiprocessing
+
+Processes are OS-level constructs. They're scheduled by the OS and can run in parallel. They don't share memory, but they can communicate by writing to shared (mp capable: threadsafe?) structures passed as params.
 
 ```python
+import multiprocessing
+import queue # for the queue.Empty exception
+
+# Memory is not shared between processes, and we can't get returned values, but
+# we can use queues to communicate. We'll pass them as parameters to the worker function
+pending = multiprocessing.Queue()
+done = multiprocessing.Queue()
+
+def work(pending, done):
+    while True: # Keep working until there's no more work to do
+        try:
+            data = pending.get_nowait()
+        except queue.Empty:
+            print(f'{multiprocessing.current_process().name}: No more work to do!')
+            break
+        print(f'{multiprocessing.current_process().name}: Working on {data}...')
+        done.put(data * 2)
+        print(f'{multiprocessing.current_process().name}: Done!')
+
+def main():
+    print('Putting some work in the queue...')
+    for i in range(20):
+        pending.put(i)
+
+    print('Creating a process for each CPU...')
+    processes = [multiprocessing.Process(target=work, args=(pending, done)) \
+                    for _ in range(multiprocessing.cpu_count())]
+    
+    print('Starting the processes...')
+    for p in processes:
+        p.start()
+    
+    print('Waiting for the processes to finish...')
+    for p in processes:
+        p.join()
+
+    print('Getting the results...')
+    results = []
+    while not done.empty():
+        results.append(done.get())
+    print(f'{results=}')
+
+# It's important to use the main guard, otherwise we could attempt to start
+# a child process before the parent process has finished bootstraping.
+if __name__ == '__main__':
+    main()
 ```
+
+#### Preemptive multitasking: Threads 
+
+Python threads are green threads, meaning they're scheduled by the interpreter, not the OS. They're not run in parallel, but interleaved.
+
+They share memory, so they can communicate by writing to shared variables.
+
+```python
+import threading
+import time
+
+results = [] # Memory is shared between threads. Lists are thread-safe
+
+def work(data):
+    global results
+    time.sleep(2)
+    results.append(data * 2) # Cannot return values but can use global vars
+    print('Work done!')
+
+thread1 = threading.Thread(target=work, args=(2,)) 
+thread2 = threading.Thread(target=work, args=(2,))
+thread1.start()
+thread2.start()
+
+print('Is thread1 alive?', thread1.is_alive()) # True
+print('Results before join:', results) # []
+
+# Waits for the threads to finish (each join blocks until the thread is done)
+thread1.join()
+thread2.join()
+
+print('Results after join:', results) # [4, 4]
+```
+
+Threads can be pooled too:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+import time
+
+def work(data):
+    time.sleep(2)
+    return data * 2
+
+print("Starting ThreadPoolExecutor")
+with ThreadPoolExecutor(max_workers=5) as executor:
+    future = executor.submit(work, 2)  # Non-blocking
+    futures = executor.map(work, [1, 2, 3])  # Non-blocking
+    print("Done submitting work to ThreadPoolExecutor")
+    print('Is future running?', future.running()) # True
+    print('Is future cancelled?', future.cancelled()) # False
+    print('Is future done?', future.done()) # False
+    try:
+        print('Is future result ready?')
+        print(future.result(timeout=1)) # Blocks until done or times out
+    except TimeoutError:
+        print('No')
+# The executor will wait for all threads to finish before exiting the `with` block, like `pool.shutdown(wait=True)`
+print("Out of ThreadPoolExecutor's context manager")
+
+# `result()` without timeout, blocks until done (though it is done now)
+result = future.result()
+print(result)
+
+# `map()` returns an iterator. When casted, blocks until all are done
+results = list(futures)
+print(results)
+```
+
+#### Cooperative multitasking: Coroutines (asyncio)
+
+We first need an __event loop__. It's a scheduler that runs coroutines, giving control to each one while the others are blocked waiting (`await`).
+
+The easiest way to start the event loop it is by calling `asyncio.run(coro)` from the main thread, where `coro` is the initial coroutine to run.
+
+##### Awaitables
+
+Awaitables can be awaited using the `await` keyword. It's only valid inside coroutines. Await calls are blocking, and yield control to the event loop.
+
+```
+Awaitable <--- Coroutine
+    ^--- Future <--- Task
+```
+
+- __Coroutines__: defined using the `async` keyword. They're functions that can be paused and resumed while waiting (`await`). They're run by awaiting them (blocking) or sheduling them as a task (non-blocking).
+- __Futures__: Represent the result of an asynchronous operation. They're created by the event loop when a coroutine is scheduled to run. They can be awaited to block execution until the result is available. Not to be confused with `concurrent.futures.Future` used with threads and processes.
+- __Tasks__: Wrap coroutines. They're scheduled to run ASAP in the event loop. Tasks have some extra features like callbacks, cancelling, etc.
+
+```python
+import asyncio
+
+async def log_seconds(n):
+    for i in range(n):
+        print(i)
+        # Sleep emulates I/O and yields control to the loop
+        await asyncio.sleep(1)
+
+async def sim_fetch_data():
+    await asyncio.sleep(3) # Emulates I/O
+    return 'data from the webssss'
+
+async def main():
+    # Create a _task_ from a coroutine. It's scheduled to be run ASAP
+    # by the event loop.
+    task = asyncio.create_task(log_seconds(10))
+
+    # Do some work. This will run for ~1 second.
+    print('Working in main()...')
+    for i in range(50_000_000): pass
+    # It doesn't run still, since we've not stopped for I/O
+    print('Still not logging seconds...')
+
+    # We'll give it a chance to start logging
+    await asyncio.sleep(0.01) # <-- I/O!
+
+    # The above will log the 1st second and stop for I/O so, since
+    # there aren't any other awaitables registered in the loop, 
+    # control will come back here.
+
+    # Create a _future_ from a coroutine. Again, will be run ASAP
+    future = asyncio.ensure_future(sim_fetch_data())
+
+    # Wait for the future to finish. This blocks execution until the
+    # future is done, also yielding control back to the loop like I/O.
+    # Since this one takes 3 seconds, we'll continue seeing seconds
+    # logged by the earlier task. 
+    data = await future
+    
+    # Now we've got the data, so when control gets back, we'll print it
+    print(data)
+
+    # Since we've got control and we're returning now, the loop will just stop and the program will exit, even if log_seconds hasn't finished.
+
+asyncio.run(main())
+```
+
+Awaitables can also be awaited in parallel using `asyncio.gather()`. It takes a list of awaitables and returns a future that resolves to a list of results after _all_ awaitables are done.
+
+```python
+asyncio.gather(
+    log_seconds(10),
+    sim_fetch_data(),
+    return_exceptions=True,  # If any awaitable raises an exception, it'll be included in the results
+)
+```
+
+TODO: async iterators and context managers
 
 ### Debugging
 

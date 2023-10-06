@@ -6,27 +6,52 @@ Docs at https://www.postgresql.org/docs/current/index.html
 Easy test environment
 =====================
 
-Tested with postgres12, modify as needed.
+Fast Docker setup
+-----------------
+
+Tested with postgres 12 and 16. Modify as needed.
 
 ```sh
-# Download and run the image (add --rm to remove the container on exit)
-docker run -e POSTGRES_HOST_AUTH_METHOD=trust -v ${PWD}:/host -p5432:5432 --name sql_test postgres:12
+# Download and run the image as `pg_test`
+#   - Sets auth to be trust (no password needed)
+#   - Mounts current directory as /host
+#   - Add --rm to remove the container on exit
+docker run -e POSTGRES_HOST_AUTH_METHOD=trust -v ${PWD}:/host -p5432:5432 --name pg_test postgres:latest
 
 # Manage the container as usual
-docker start sql_test -a
-docker stop sql_test
+docker start pg_test -a
+docker stop pg_test
 
 # Create a database
-docker exec -it sql_test psql postgres://postgres@localhost:5432/postgres -c 'create database sql_test'
+docker exec -it pg_test psql postgres://postgres@localhost:5432/postgres -c 'create database pg_test'
 
 # Optionally load some data
-docker exec -it sql_test psql postgres://postgres@localhost:5432/sql_test -f /host/test_schema_and_data.sql
+docker exec -it pg_test psql postgres://postgres@localhost:5432/pg_test -f /host/test_schema_and_data.sql
 
 # Connect using your local psql
-psql postgres://postgres@localhost:5432/sql_test
+psql postgres://postgres@localhost:5432/pg_test
 
 # Connect using psql from Postgres' Docker container
-docker exec -it sql_test psql postgres://postgres@localhost:5432/sql_test
+docker exec -it pg_test psql postgres://postgres@localhost:5432/pg_test
+```
+
+Test data
+---------
+
+* [My data analyst SQL test data](https://github.com/nandilugio/data_analysts_sql_test/blob/master/test_schema_and_data.sql)
+* [PostgreSQL Wiki sample databases](https://wiki.postgresql.org/wiki/Sample_Databases)
+* postgresqltutorial.com [tutorial database](https://www.postgresqltutorial.com/postgresql-sample-database/)
+* PostgreSQL [tutorial](https://www.postgresql.org/docs/current/tutorial.html) has a [sample database](https://www.postgresql.org/docs/current/tutorial-sql-intro.html) (in [the repo](https://github.com/postgres/postgres/tree/master/src/tutorial)).
+* PostgreSQL [regression tests setup schema](https://www.postgresql.org/docs/current/regress.html) sometimes used in the docs.
+
+For the last, [test_setup.sql](https://github.com/postgres/postgres/blob/master/src/test/regress/sql/test_setup.sql) requires the [data files](https://github.com/postgres/postgres/blob/master/src/test/regress/data/) to be downloaded. For help on how, see this [SO answer](https://stackoverflow.com/questions/7106012/download-a-single-folder-or-directory-from-a-github-repo). Then, assuming you have the above Docker setup:
+
+```sh
+# Load the schema. Set PG_ABS_SRCDIR to the abs path within the container where the `data/` dir is available.
+wget -qO- https://raw.githubusercontent.com/postgres/postgres/master/src/test/regress/sql/test_setup.sql | docker exec -e PG_ABS_SRCDIR=/host -i pg_test psql postgres://postgres@localhost:5432/pg_test
+
+# Run any other sql files you need straight from the PostgreSQL repo piping wget output to psql
+wget -qO- https://raw.githubusercontent.com/postgres/postgres/master/src/test/regress/sql/create_index.sql | docker exec -i pg_test psql postgres://postgres@localhost:5432/pg_test        
 ```
 
 `psql` client
@@ -82,7 +107,7 @@ BOOLEAN     -- true/false
 SMALLINT/INTEGER/BIGINT -- 16/32/64-bit signed integer
 DECIMAL|NUMERIC         -- arbitrary precision decimal
 REAL/DOUBLE|FLOAT       -- 32/64-bit floating point number
-SERIAL                  -- auto-incrementing integer
+SERIAL                  -- Integer. Not only a type but also a sequence (like MySQL's autoincrement)
 
 CHAR(n)                 -- fixed-length string
 TEXT|VARCHAR(_)         -- variable-length string
@@ -108,22 +133,93 @@ CREATE DOMAIN type_name AS type [DEFAULT value] [NOT NULL] [CHECK (condition)];
 Sequences
 ---------
 
-TODO
+```sql
+-- Create sequence
+-- See https://www.postgresql.org/docs/current/sql-createsequence.html
+CREATE SEQUENCE sequence_name
+    [AS { SMALLINT | INTEGER | BIGINT }]
+    [INCREMENT/MINVALUE/MAXVALUE/START]
+    [CACHE/CYCLE]
+    [OWNED BY { table_name.column_name | NONE }];
 
-JSON
-----
+-- Drop sequence
+-- See https://www.postgresql.org/docs/current/sql-dropsequence.html
+DROP SEQUENCE sequence_name;
 
-TODO
+-- Use sequence
+-- See https://www.postgresql.org/docs/current/functions-sequence.html
+sequence_name.NEXTVAL
+sequence_name.CURRVAL
 
-Text search
------------
+-- Set sequence value
+-- See https://www.postgresql.org/docs/current/functions-sequence.html
+SELECT SETVAL(sequence_name, value, is_called); -- is_called = true to increment sequence? TODO
+SELECT SETVAL(sequence_name, 1, false); -- Reset sequence to 1
 
-TODO
+-- Use sequence in table
+-- See https://www.postgresql.org/docs/current/sql-createtable.html
+CREATE TABLE table_name (
+    id SERIAL PRIMARY KEY, -- table_name_id_seq INTEGER
+    sequence_name  default nextval('my_sequence_name')
+);
+```
 
 Indexes
 -------
 
-TODO
+Read [all about indexes](https://www.postgresql.org/docs/current/indexes.html).
+
+* __B-tree:__ Defalut. Searches and updates are O(log(n)). Stores order: good for equality and range queries, ORDER BY, UNIQUE constraints, etc.
+* __Hash:__ Searches and updates are O(1). Smaller than b-trees since values are not stored. Doesn't store order so only good for equality queries. Small values (say <25 chars) doesn't benefit from hash indexes => prefer b-trees.
+* __GIN:__ Generalized Inverted Index. Good for searches within the value (full-text search, JSON props, etc.).
+
+```sql
+-- Create index
+-- See https://www.postgresql.org/docs/current/sql-createindex.html
+CREATE [UNIQUE] -- Enforces uniqueness
+    INDEX [CONCURRENTLY] -- Create index without locking table. Will take longer to be usable. Quirky for unique indexes.
+    index_name
+    ON table_name (col1, col2, ...) -- or expressions like `lower(col1)`, etc.
+    USING [BTREE|HASH|GIN|...];
+
+-- Maintenance
+REINDEX TABLE table_name; -- Rebuild all indexes on table. Can shrink indexes.
+
+-- Drop index
+-- See https://www.postgresql.org/docs/current/sql-dropindex.html
+DROP INDEX index_name;
+```
+
+TODO: GIN, tsvector and text search
+
+JSON
+----
+
+See [JSON types](https://www.postgresql.org/docs/current/datatype-json.html) in the docs.
+[This article](https://scalegrid.io/blog/using-jsonb-in-postgresql-how-to-effectively-store-index-json-data-in-postgresql/) is also interesting.
+
+```sql
+CREATE TABLE users ( ... config JSONB DEFAULT '{}'::JSONB, ... );
+
+-- Querying
+config->'lang' = 'ES'; -- -> returns JSON(B)
+config->>'lang' = 'ES'; -- ->> returns TEXT
+
+-- Querying with indexes
+-- See https://www.postgresql.org/docs/current/datatype-json.html#JSON-INDEXING
+CREATE INDEX users_config_gin ON users USING GIN (config);
+config ? 'ui'; -- test key existence
+config @> '{"ui": { "theme": "dark" }}'::jsonb; -- test leaf inclusion
+-- See all functions and operators: https://www.postgresql.org/docs/current/functions-json.html
+
+-- Also useful: format results as JSON
+SELECT
+    json_build_object(
+        'id', users.id,
+        'follower_ids', coallesce(json_agg(followers.id), '[]'::json)
+    )
+FROM users JOIN users AS followers ...;
+```
 
 Tables
 ======
@@ -135,13 +231,15 @@ Creation
 -- Create table
 -- See https://www.postgresql.org/docs/current/sql-createtable.html
 CREATE TABLE table_name (
-    -- column_name data_type [column_constraint],
+    -- column_name data_type [column_constraints] [defau],
     id SERIAL PRIMARY KEY,
     other_id INTEGER REFERENCES other_table (other_id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    full_name TEXT GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED,
     age INTEGER CHECK (age > 0),
-    created_at TIMESTAMP DEFAULT NOW()  
-    ...
+    -- ...
 );
 
 -- Create table from another table
@@ -453,7 +551,7 @@ PL/PgSQL
 ```sql
 $$
 BEGIN
-    TOOD -- statements
+    TODO -- statements
 END;
 $$ LANGUAGE plpgsql;
 
@@ -462,7 +560,36 @@ $$ LANGUAGE plpgsql;
 Triggers
 ========
 
-TODO
+```sql
+-- Create trigger
+-- See https://www.postgresql.org/docs/current/sql-createtrigger.html
+CREATE TRIGGER trigger_name
+    [BEFORE|AFTER|INSTEAD OF] [INSERT|UPDATE|DELETE|TRUNCATE] -- INSTEAD OF for views
+    ON table_name
+    REFERENCING OLD|NEW TABLE AS name
+    [FOR EACH ROW|STATEMENT]
+    [WHEN (condition)] -- on ROW triggers, condition can reference OLD.col or NEW.col
+    EXECUTE FUNCTION function_name('some arg');
+    -- Params can be passed to the function, but it receives them in TG_ARGV. It can also access
+    -- the OLD and NEW records, and other data through TG_* variables.
+
+-- Drop trigger
+-- See https://www.postgresql.org/docs/current/sql-droptrigger.html
+DROP TRIGGER trigger_name ON table_name;
+
+-- Example: `updated_at` column
+CREATE FUNCTION trigger_set_timestamp()
+    RETURNS trigger -- trigger functions must return a row (OLD, NEW, NULL or a custom one)
+    LANGUAGE plpgsql AS
+$$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER set_timestamp BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+```
 
 Concurrency Control
 ===================
@@ -480,10 +607,56 @@ ROLLBACK TO savepoint_name;
 RELEASE savepoint_name;
 ```
 
-Locking
--------
+Explicit Locking
+----------------
 
-TODO
+```sql
+-- Lock row
+SELECT * FROM table_name WHERE id = 1 FOR [UPDATE|SHARE] [NOWAIT]; -- NOWAIT to fail if row is locked
+
+-- Lock table
+LOCK TABLE table_name IN [ACCESS SHARE|ROW SHARE|ROW EXCLUSIVE|SHARE UPDATE EXCLUSIVE|SHARE|SHARE ROW EXCLUSIVE|EXCLUSIVE|ACCESS EXCLUSIVE] MODE;
+```
+
+Pessimistic Concurrency Control
+-------------------------------
+
+Locks data to prevent other transactions from modifying it. Can cause deadlocks. Locks are released when the transaction ends.
+
+```sql
+-- Lock row
+SELECT * FROM table_name WHERE id = 1 FOR [UPDATE|SHARE] [NOWAIT]; -- NOWAIT to fail if row is locked
+
+-- Lock table
+LOCK TABLE table_name IN [ACCESS SHARE|ROW SHARE|ROW EXCLUSIVE|SHARE UPDATE EXCLUSIVE|SHARE|SHARE ROW EXCLUSIVE|EXCLUSIVE|ACCESS EXCLUSIVE] MODE;
+```
+
+Optimistic Concurrency Control
+------------------------------
+
+Allows other transactions to modify data, but checks for conflicts before committing. Can cause serialization failures. Locks are released when the transaction ends. Requires a version column. See [this article](https://www.citusdata.com/blog/2018/02/15/optimistic-locking-in-postgresql/) for more info.
+
+```sql
+-- Add a version column
+ALTER TABLE table_name ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+
+-- Update row
+UPDATE table_name SET version = version + 1 WHERE id = 1 AND version = 0;
+
+-- Check if update was successful
+SELECT * FROM table_name WHERE id = 1 AND version = 1;
+```
+
+Transactions and Concurrency Control
+------------------------------------
+    
+```sql
+-- Transaction isolation levels
+-- See https://www.postgresql.org/docs/current/transaction-iso.html
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED; -- Default
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+```
 
 The rule system
 ===============
@@ -493,4 +666,35 @@ TODO
 System Info and Administration
 ==============================
 
-TODO
+Troubleshooting
+---------------
+
+TODO: check!
+
+```sql
+-- Check for deadlocks
+SELECT * FROM pg_locks WHERE NOT GRANTED;
+
+-- Check for serialization failures
+SELECT * FROM pg_stat_database WHERE xact_commit + xact_rollback > 0;
+
+-- Check for long running transactions
+SELECT * FROM pg_stat_activity WHERE state = 'active' AND xact_start < NOW() - INTERVAL '5 minutes';
+
+-- Kill a connection
+SELECT pg_terminate_backend(pid);
+
+-- Check for locks
+SELECT * FROM pg_locks;
+
+-- Check for table bloat
+SELECT
+    schemaname || '.' || relname AS table,
+    indexrelname AS index,
+    pg_size_pretty(pg_total_relation_size(C.oid)) AS total_size,
+    pg_size_pretty(pg_relation_size(C.oid)) AS internal_size,
+    pg_size_pretty(pg_table_size(C.oid)) AS table_size,
+    pg_size_pretty(pg_indexes_size(C.oid)) AS indexes_size,
+    pg_size_pretty(pg_total_relation_size(reltoastrelid)) AS toast_size
+
+```
