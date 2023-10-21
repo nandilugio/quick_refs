@@ -102,7 +102,7 @@ Data types
 See [all data types](https://www.postgresql.org/docs/current/datatype.html).
 
 ```sql
-BOOLEAN     -- true/false
+BOOLEAN                 -- True/False
 
 SMALLINT/INTEGER/BIGINT -- 16/32/64-bit signed integer
 DECIMAL|NUMERIC         -- arbitrary precision decimal
@@ -116,7 +116,7 @@ DATE/TIME               -- date/time
 TIMESTAMP               -- date and time
 TIMESTAMPTZ             -- date and time with timezone
 
-ARRAY                   -- array of values (kind of deprecated in favor of JSONB right?)
+TYPE[]                  -- array of TYPE, 1 indexed! (kind of deprecated in favor of JSONB right?)
 ENUM                    -- enumerated (enum) type
 JSON                    -- JSON data as string (kind of deprecated too right?)
 JSONB                   -- JSON data with binary representation
@@ -517,6 +517,8 @@ CUME_DIST() OVER (ORDER BY exp)                                 -- cumulative di
 User-defined functions
 ======================
 
+TODO Procedures
+
 ```sql
 -- Create function
 CREATE FUNCTION function_name (arg1 type, arg2 type, ...) RETURNS type AS $$
@@ -533,13 +535,13 @@ SELECT function_name (arg1, arg2, ...);
 Procedural Language (PL/*) functions
 ------------------------------------
 
-| Language   | Availability | Trusted |
-|------------|--------------|---------|
-| sql        | core         | yes     |
-| plpgsql    | core         | yes     |
-| plpython3u | core         | no      |
-| plsh       | core         | no      |
-| plv8       | 3rd party    | yes     |
+| Language   | Availability                          | Trusted |
+|------------|---------------------------------------|---------|
+| sql        | core                                  | yes     |
+| plpgsql    | core                                  | yes     |
+| plpython3u | bundled (use `create extension`)      | no      |
+| plsh       | core?                                 | no      |
+| plv8       | 3rd party                             | yes     |
 
 See [all languages](https://wiki.postgresql.org/wiki/PL_Matrix).
 
@@ -548,13 +550,60 @@ Trusted languages can't expose data unintendedly (can't access the filesystem, e
 PL/PgSQL
 --------
 
-```sql
-$$
-BEGIN
-    TODO -- statements
-END;
-$$ LANGUAGE plpgsql;
+See [PL/PgSQL docs](https://www.postgresql.org/docs/current/plpgsql.html).
 
+```sql
+CREATE OR REPLACE FUNCTION greetings(
+    first_name TEXT,
+    last_name TEXT,
+    only_latin BOOLEAN DEFAULT false
+)
+RETURNS SETOF TEXT -- Special type for returning multiple rows, but can be any
+LANGUAGE plpgsql AS
+$$ DECLARE
+    full_name TEXT;
+    greeting_templates TEXT[];
+    greeting_template TEXT;
+BEGIN
+    -- These 3 are equivalent:
+
+    -- 1) Assignment
+    full_name := first_name || ' ' || last_name;
+
+    -- 2) Execute simple query (INTO captures single-row results)
+    SELECT CONCAT_WS(' ', first_name, last_name) INTO full_name;
+
+    -- 3) Execute dynamically generated queries (good for dynamic WHERE clauses, etc.)
+    EXECUTE 'SELECT CONCAT_WS('' '', $1, ' || quote_literal(last_name) || ')' -- note the different quoting technique
+        INTO full_name
+        USING first_name; -- Replaces $1, automatically quoted
+    
+    -- Many of the expected control structures, etc. are available
+    greeting_templates := ARRAY[
+        'Hola, %s!',
+        'Bonjour, %s!'
+    ];
+    IF NOT only_latin THEN
+        greeting_templates := ARRAY_APPEND(greeting_templates, 'こんにちは、%s！');
+    END IF;
+
+    -- Loops let you return multiple rows...
+    FOR greeting_template IN
+        SELECT * FROM UNNEST(greeting_templates)
+    LOOP
+        RETURN NEXT format(greeting_template::TEXT, full_name);
+    END LOOP;
+
+    -- ...also directly looping on the array...
+    FOREACH greeting_template IN ARRAY greeting_templates
+    LOOP
+        RETURN QUERY SELECT format(greeting_template::TEXT, full_name);
+    END LOOP;
+
+    -- ...though RETURN QUERY is simpler in this case
+    RETURN QUERY SELECT format(tpl, full_name) FROM UNNEST(greeting_templates) as tpl;
+END
+$$;
 ```
 
 Triggers
@@ -571,7 +620,7 @@ CREATE TRIGGER trigger_name
     [WHEN (condition)] -- on ROW triggers, condition can reference OLD.col or NEW.col
     EXECUTE FUNCTION function_name('some arg');
     -- Params can be passed to the function, but it receives them in TG_ARGV. It can also access
-    -- the OLD and NEW records, and other data through TG_* variables.
+    -- the OLD and/or NEW records, and other data through TG_* variables.
 
 -- Drop trigger
 -- See https://www.postgresql.org/docs/current/sql-droptrigger.html
