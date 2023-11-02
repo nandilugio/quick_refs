@@ -521,9 +521,11 @@ TODO Procedures
 
 ```sql
 -- Create function
-CREATE FUNCTION function_name (arg1 type, arg2 type, ...) RETURNS type AS $$
-    -- statements
-$$ LANGUAGE sql;
+CREATE FUNCTION function_name (arg1 type, arg2 type, ... , OUT outarg1 type, ...)
+RETURNS type AS $$
+    -- Some languages support OUT parameters, but in general you can just return a row
+    -- OUT parameters will be returned as a row
+$$ LANGUAGE plpgsql;
 
 -- Drop function
 DROP FUNCTION function_name (type, type, ...);
@@ -589,7 +591,7 @@ BEGIN
 
     -- Loops let you return multiple rows...
     FOR greeting_template IN
-        SELECT * FROM UNNEST(greeting_templates)
+        SELECT * FROM UNNEST(greeting_templates) -- UNNEST returns a set of rows from an array
     LOOP
         RETURN NEXT format(greeting_template::TEXT, full_name);
     END LOOP;
