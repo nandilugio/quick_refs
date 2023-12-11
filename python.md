@@ -65,6 +65,7 @@ type(3 + 2j) == complex
 
 1000000 == 1_000_000  # Underscores are ignored in numeric literals
 0b1010 == 0o12 == 0xa == 10  # Different bases
+1.2e3 == 1200  # Scientific notation
 
 abs(-3) == 3
 int(3.4) == 3 # casting using the Int constructor
