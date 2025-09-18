@@ -18,7 +18,7 @@ Syntax
 - `snake_case` for functions and variables
 - `_single_leading_underscore` for private things like methods, module functions and variables, etc.
     - `__double_leading_underscore` is name mangling: `__name` becomes `_classname__name` so they're private even in inheritance situations
-    - `__double_leading_and_trailing_underscore__` for special reserved methods 
+    - `__double_leading_and_trailing_underscore__` for special reserved methods (magic methods or dunder methods)
 
 ### Basic types, built-in functions and operators
 
@@ -374,7 +374,7 @@ class SomeClass:
     def some_method(self, arg):
         return self.instance_var + arg
 
-    @classmethod  # Ensures all calls pass the `cls` implicit argument
+    @classmethod  # Ensures all calls receive the `cls` implicit argument
     def some_class_method(cls, arg):
         # Receives implicitly the _class object_, not an instance
         return cls.class_var + arg
@@ -413,10 +413,49 @@ TODO lowercase str vs String and the result of type()
 
 ### Modules (files) and packages (dirs)
 
-TODO
+Modules are files with Python code.
+- Their name (used in internal references like `import` statements, etc.) is the name of the file without the `.py` extension.
+- Their "global" namespace (top-level definitions) are private to the module (though accessible from outside as `module.x`).
+
+Packages are folders with an `__init__.py` file in them.
+- Their internal name is the same as the directory name.
+- `__init.py__` can be empty or have initialization code
+    - Can define `__all__` with a list of _strings_ of all names that will be imported by `from module import *` (see below)
+        - Local defs on the file will also be imported, and would override/mask anything declared in `__all__`
+
+#### Imports
+
+The module search path:
+1. Built-ins (`sys.builtin_module_names`)
+2. Modules in `sys.path`
+    - Dir containing the script (or the current directory when no file is specified)
+    - `PYTHONPATH` env var (same syntax as `PATH`)
+    - The installation-dependent default (by convention including a `site-packages` directory, handled by the `site` module).
+
+`dir(module)` is used to find out which names a module defines.
 
 ```python
+import math             # math, math.log(3)
+from math import log    # log(3)
+
+from module import *    # all names defined in module, except those prefixed with `_`
+from package import *    # all names defined in package's `__init__.py`, including anything in `__all__` (list of strings)
+
+# Absolute imports
+import package.package.module       # package.package.module
+from package.package import module  # module
+from package.module import function # function (or var, etc.)
+
+# Relative imports
+from .sibling import something      # each dot is a "parent package" up (can use many)
 ```
+
+#### Compilation
+
+`python script.py` runs without compiling
+`python -m script` compiles it to `__pycache__`
+
+TODO
 
 ### Context Managers
 
