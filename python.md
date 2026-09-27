@@ -191,25 +191,28 @@ s.issubset({1,2,3,4}) == s < {1, 2, 3, 4}
 #### Dictionaries ####
 # Unordered mappings, keys can be any hashable type
 
-d = {1: 2, 'a': 'x', 'b': [1, 2]}
+d = {1: 2, 'a': 'x', 'b': [1, 2], 'c': 3}
 type(d) == dict
 
 d[1] == 2; d['a'] == 'x'
 
-d1 = {1: 2, 3: 4}
-d1 | {5: 6} == {1: 2, 3: 4, 5: 6}  # Merge operator (see also & and ^)
-d1 |= {5: 6}  # In-place merge, same as `d1.update({5: 6})`
-
-len(d) == 3
+len(d) == 4
  
-d.items()  # dict_items([(1, 2), ('a', 'x'), ('b', [1, 2])])
-d.values() # dict_values([2, 'x', [1, 2]])
-d.keys()   # dict_keys([1, 'a', 'b'])
+d.items()  # dict_items([(1, 2), ('a', 'x'), ('b', [1, 2]), ('c', 3)])
+d.values() # dict_values([2, 'x', [1, 2], 3])
+d.keys()   # dict_keys([1, 'a', 'b', 'c'])
 list(d.keys()) == list(d)
+
+d.get('no', 'default') == 'default'
+d.pop('a', 'default') == 'x' # and removes 'a' from the dict
 
 'a' in d
 del d['a']
 ('a' not in d) == (not 'a' in d) # Beware precedences!
+
+d1 = {1: 2, 3: 4}
+d1 | {5: 6} == {1: 2, 3: 4, 5: 6}  # Merge operator (see also & and ^)
+d1 |= {5: 6}  # In-place merge, same as `d1.update({5: 6})`
 
 # Dict constructor
 {'one': 1, 'two': 2} == \
@@ -690,10 +693,27 @@ asyncio.gather(
 
 TODO: async iterators and context managers
 
+### REPL
+
+The `python` command is a repl itself.
+
+A common alternative is `ipython`. Can be called with `--pdb` so it drops to _i_pdb on unhandled exceptions.
+
 ### Debugging
+
+Default debugger in stdlib: `pdb`
 
 ```python
 print(f'{var=}')  # prints `var=value`
-breakpoint()  # drops to Pdb
-
+breakpoint()  # drops to debugger. Calls sys.breakpointhook() wich defaults to pdb.set_trace() and can be overriden by env var PYTHONBREAKPOINT
 ```
+
+#### Alternative packages
+
+```python
+pip install ipython X
+PYTHONBREAKPOINT=X.set_trace python ...
+```
+
+Where X is one of `ipdb`, `web_pdb`
+
